@@ -40,19 +40,17 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QByteArray &data)
     QString msg = QString::fromUtf8(data).trimmed();
     qDebug() << "Received:" << msg;
 
-    // Формат регистрации: REGISTER:nickname:port
     if (msg.startsWith("REGISTER:")) {
         QStringList parts = msg.split(":");
         if (parts.size() == 3) {
             QString nickname = parts[1];
             QString port     = parts[2];
-            QString address  = socket->peerAddress().toString() + ":" + port;
+            QString address  = socket->peerAddress().toString() + "|" + port;
             m_peers[nickname] = address;
             qDebug() << "Registered:" << nickname << "->" << address;
             send_response(socket, "OK");
         }
     }
-    // Формат поиска: FIND:nickname
     else if (msg.startsWith("FIND:")) {
         QString nickname = msg.mid(5);
         if (m_peers.contains(nickname)) {
