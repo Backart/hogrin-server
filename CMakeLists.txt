@@ -10,6 +10,7 @@ qt_add_executable(Hogrin-Server
     main.cpp
     bootstrap_server.h
     bootstrap_server.cpp
+    config.h
 )
 
 target_link_libraries(Hogrin-Server
