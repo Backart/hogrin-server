@@ -23,6 +23,8 @@ private:
     QMap<QString, QString> m_peers;
 
     void send_response(QTcpSocket *socket, const QString &response);
+
+    QString normalize_address(const QString &address);
 };
 
 #endif // BOOTSTRAP_SERVER_H

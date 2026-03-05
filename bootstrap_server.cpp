@@ -45,16 +45,19 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QByteArray &data)
         if (parts.size() == 3) {
             QString nickname = parts[1];
             QString port     = parts[2];
-            QString address  = socket->peerAddress().toString() + "|" + port;
+            QString ip       = normalize_address(socket->peerAddress().toString()); // фикс
+            QString address  = ip + "|" + port;
             m_peers[nickname] = address;
             qDebug() << "Registered:" << nickname << "->" << address;
             send_response(socket, "OK");
         }
     }
-    else if (msg.startsWith("FIND:")) {
-        QString nickname = msg.mid(5);
+    else if (msg.startsWith("UNREGISTER:")) {
+        QString nickname = msg.mid(11);
         if (m_peers.contains(nickname)) {
-            send_response(socket, "FOUND:" + m_peers[nickname]);
+            m_peers.remove(nickname);
+            qDebug() << "Unregistered:" << nickname;
+            send_response(socket, "OK");
         } else {
             send_response(socket, "NOT_FOUND");
         }
@@ -64,4 +67,11 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QByteArray &data)
 void Bootstrap_Server::send_response(QTcpSocket *socket, const QString &response)
 {
     socket->write((response + "\n").toUtf8());
+}
+
+QString Bootstrap_Server::normalize_address(const QString &address)
+{
+    if (address.startsWith("::ffff:"))
+        return address.mid(7);
+    return address;
 }
