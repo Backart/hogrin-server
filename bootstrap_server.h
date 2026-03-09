@@ -21,7 +21,7 @@ struct Stored_Message {
 
 struct Peer_Info {
     QString address;  // host|port
-    QString pubkey;   // hex publick key
+    QString pubkey;   // hex public key
 };
 
 class Bootstrap_Server : public QObject {
@@ -41,16 +41,28 @@ private:
     void    send_response(QTcpSocket *socket, const QString &response);
     QString normalize_address(const QString &address);
 
+    // Cleanup
     QTimer *m_cleanup_timer;
     void cleanup_old_messages();
 
-    QMap<QString, int> m_ip_store_count; // ip -> count STORE for sessia
-    void reset_ip_counters();            // reset counters
-
+    // Rate limiting
+    QMap<QString, int> m_ip_store_count;
+    void reset_ip_counters();
     QTimer *m_ip_reset_timer;
 
+    // SQLite — peers, messages, sessions (токени)
     QSqlDatabase m_db;
     bool init_database();
+
+    // PostgreSQL — users (нікнейми, хеші паролів)
+    QSqlDatabase m_pg;
+    bool init_postgres();
+
+    // AUTH handlers
+    void handle_auth_register(QTcpSocket *socket, const QString &nickname, const QString &password);
+    void handle_auth_login   (QTcpSocket *socket, const QString &nickname, const QString &password);
+    void handle_auth_verify  (QTcpSocket *socket, const QString &token);
+    void handle_auth_logout  (QTcpSocket *socket, const QString &token);
 };
 
 #endif // BOOTSTRAP_SERVER_H
