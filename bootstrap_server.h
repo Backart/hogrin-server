@@ -32,7 +32,8 @@ public:
 
 private slots:
     void handle_new_connection();
-    void handle_data(QTcpSocket *socket, const QByteArray &data);
+
+    void handle_data(QTcpSocket *socket, const QString &line);
 
 private:
     QTcpServer *m_server;
@@ -40,6 +41,9 @@ private:
 
     void    send_response(QTcpSocket *socket, const QString &response);
     QString normalize_address(const QString &address);
+
+    QMap<QTcpSocket*, QByteArray> m_buffers;
+    void handle_incoming_data(QTcpSocket *socket);
 
     // Cleanup
     QTimer *m_cleanup_timer;
@@ -50,11 +54,11 @@ private:
     void reset_ip_counters();
     QTimer *m_ip_reset_timer;
 
-    // SQLite — peers, messages, sessions (токени)
+    // SQLite — peers, messages, sessions
     QSqlDatabase m_db;
     bool init_database();
 
-    // PostgreSQL — users (нікнейми, хеші паролів)
+    // PostgreSQL — users
     QSqlDatabase m_pg;
     bool init_postgres();
 

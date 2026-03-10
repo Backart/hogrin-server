@@ -24,7 +24,7 @@ Bootstrap_Server::Bootstrap_Server(quint16 port, QObject *parent)
     connect(m_ip_reset_timer, &QTimer::timeout,
             this, &Bootstrap_Server::reset_ip_counters);
 
-    m_cleanup_timer->start(60 * 60 * 1000);   // кожну годину
+    m_cleanup_timer->start(60 * 60 * 1000);
     m_ip_reset_timer->start(60 * 60 * 1000);
 }
 
@@ -40,29 +40,50 @@ bool Bootstrap_Server::start()
     return true;
 }
 
+// ── connection handling ───────────────────────────────────────────────────────
+
 void Bootstrap_Server::handle_new_connection()
 {
     while (m_server->hasPendingConnections()) {
         QTcpSocket *socket = m_server->nextPendingConnection();
         qDebug() << "New connection from:" << socket->peerAddress().toString();
 
-        connect(socket, &QTcpSocket::readyRead, this, [this, socket](){
-            handle_data(socket, socket->readAll());
+        connect(socket, &QTcpSocket::readyRead, this, [this, socket]() {
+            handle_incoming_data(socket);
         });
 
-        connect(socket, &QTcpSocket::disconnected, this, [socket](){
+        connect(socket, &QTcpSocket::disconnected, this, [this, socket]() {
             qDebug() << "Client disconnected:" << socket->peerAddress().toString();
+            m_buffers.remove(socket);
             socket->deleteLater();
         });
     }
 }
 
-void Bootstrap_Server::handle_data(QTcpSocket *socket, const QByteArray &data)
+void Bootstrap_Server::handle_incoming_data(QTcpSocket *socket)
 {
-    QString msg = QString::fromUtf8(data).trimmed();
-    qDebug() << "Received:" << msg.left(120); // обрізаємо щоб не спамити лог бінарником
+    m_buffers[socket] += socket->readAll();
 
-    // ── AUTH ──────────────────────────────────────────────────────────
+    while (true) {
+        int newline = m_buffers[socket].indexOf('\n');
+        if (newline == -1) break;
+
+        QByteArray line_bytes = m_buffers[socket].left(newline);
+        m_buffers[socket]     = m_buffers[socket].mid(newline + 1);
+
+        QString line = QString::fromUtf8(line_bytes).trimmed();
+        if (!line.isEmpty())
+            handle_data(socket, line);
+    }
+}
+
+// ── protocol dispatch ─────────────────────────────────────────────────────────
+
+void Bootstrap_Server::handle_data(QTcpSocket *socket, const QString &msg)
+{
+    qDebug() << "Received:" << msg.left(120);
+
+    // ── AUTH ─────────────────────────────────────────────────────────────────
     if (msg.startsWith("AUTH_REGISTER:")) {
         QString rest = msg.mid(14);
         int sep = rest.indexOf(':');
@@ -82,7 +103,7 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QByteArray &data)
         handle_auth_logout(socket, msg.mid(12));
     }
 
-    // ── P2P REGISTER ────────────────────────────────────────────────
+    // ── P2P REGISTER ─────────────────────────────────────────────────────────
     else if (msg.startsWith("REGISTER:")) {
         QStringList parts = msg.split(":");
         if (parts.size() == 4) {
@@ -125,7 +146,7 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QByteArray &data)
         }
     }
 
-    // ── RELAY ─────────────────────────────────────────────────────────
+    // ── RELAY ─────────────────────────────────────────────────────────────────
     else if (msg.startsWith("STORE:")) {
         QString ip = normalize_address(socket->peerAddress().toString());
 
@@ -140,8 +161,8 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QByteArray &data)
         QString    nickname = msg.mid(6, first_colon - 6);
         QByteArray blob     = QByteArray::fromHex(msg.mid(first_colon + 1).toUtf8());
 
-        if (blob.isEmpty())                              { send_response(socket, "ERROR:EMPTY_BLOB"); return; }
-        if (blob.size() > Config::RELAY_MAX_BLOB_SIZE)  { send_response(socket, "ERROR:TOO_LARGE");  return; }
+        if (blob.isEmpty())                             { send_response(socket, "ERROR:EMPTY_BLOB"); return; }
+        if (blob.size() > Config::RELAY_MAX_BLOB_SIZE) { send_response(socket, "ERROR:TOO_LARGE");  return; }
 
         QSqlQuery count_q(m_db);
         count_q.prepare("SELECT COUNT(*) FROM messages WHERE nickname = :nick");
@@ -182,7 +203,9 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QByteArray &data)
         del.bindValue(":nick", nickname);
         del.exec();
 
-        send_response(socket, responses.join("\n"));
+        for (const QString &r : responses)
+            send_response(socket, r);
+
         qDebug() << "Fetched" << responses.size() << "messages for:" << nickname;
     }
     else if (msg.startsWith("UNREGISTER:")) {
@@ -201,7 +224,7 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QByteArray &data)
     }
 }
 
-// ── AUTH HANDLERS ─────────────────────────────────────────────────────
+// ── AUTH handlers ─────────────────────────────────────────────────────────────
 
 void Bootstrap_Server::handle_auth_register(QTcpSocket *socket,
                                             const QString &nickname,
@@ -221,7 +244,6 @@ void Bootstrap_Server::handle_auth_register(QTcpSocket *socket,
         return;
     }
 
-    // Argon2id хешування пароля
     char hash[crypto_pwhash_STRBYTES];
     QByteArray pw = password.toUtf8();
     if (crypto_pwhash_str(hash,
@@ -311,7 +333,6 @@ void Bootstrap_Server::handle_auth_verify(QTcpSocket *socket,
     QString nickname   = q.value(0).toString();
     qint64  created_at = q.value(1).toLongLong();
 
-    // TTL сесії — 30 днів
     qint64 age = QDateTime::currentSecsSinceEpoch() - created_at;
     if (age > 30LL * 24 * 3600) {
         QSqlQuery del(m_db);
@@ -338,7 +359,7 @@ void Bootstrap_Server::handle_auth_logout(QTcpSocket *socket,
     send_response(socket, "AUTH_LOGOUT_OK");
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 void Bootstrap_Server::send_response(QTcpSocket *socket, const QString &response)
 {
@@ -409,7 +430,6 @@ bool Bootstrap_Server::init_database()
     q.exec("CREATE INDEX IF NOT EXISTS idx_messages_nickname "
            "ON messages(nickname)");
 
-    // Таблиця сесій (токени авторизації)
     q.exec("CREATE TABLE IF NOT EXISTS sessions ("
            "token      TEXT    PRIMARY KEY,"
            "nickname   TEXT    NOT NULL,"
