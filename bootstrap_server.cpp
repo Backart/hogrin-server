@@ -127,7 +127,7 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QString &msg)
             else
                 qDebug() << "Registered:" << nickname << "->" << address;
 
-            send_response(socket, "OK");
+            send_response(socket, "REGISTER_OK:" + ip);
         }
     }
     else if (msg.startsWith("FIND:")) {
