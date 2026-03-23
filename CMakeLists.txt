@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.19)
 
 project(Hogrin-Server LANGUAGES CXX)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Network Sql)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Network Sql)
 
 qt_standard_project_setup()
 
