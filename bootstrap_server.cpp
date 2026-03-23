@@ -114,13 +114,14 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QString &msg)
             QString address  = ip + "|" + port;
 
             QSqlQuery q(m_db);
-            q.prepare("INSERT INTO peers (nickname, address, pubkey) "
-                      "VALUES (:nick, :addr, :pubkey) "
+            q.prepare("INSERT INTO peers (nickname, address, pubkey, last_seen) "
+                      "VALUES (:nick, :addr, :pubkey, :ts) "
                       "ON CONFLICT(nickname) DO UPDATE SET "
-                      "address = excluded.address, pubkey = excluded.pubkey");
+                      "address = excluded.address, pubkey = excluded.pubkey, last_seen = excluded.last_seen");
             q.bindValue(":nick",   nickname);
             q.bindValue(":addr",   address);
             q.bindValue(":pubkey", pubkey);
+            q.bindValue(":ts",     QDateTime::currentSecsSinceEpoch());
 
             if (!q.exec())
                 qWarning() << "REGISTER failed:" << q.lastError().text();
@@ -134,13 +135,19 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QString &msg)
         QString nickname = msg.mid(5);
 
         QSqlQuery q(m_db);
-        q.prepare("SELECT address, pubkey FROM peers WHERE nickname = :nick");
+        q.prepare("SELECT address, pubkey, last_seen FROM peers WHERE nickname = :nick");
         q.bindValue(":nick", nickname);
         q.exec();
 
         if (q.next()) {
-            send_response(socket, "FOUND:" + q.value(0).toString()
-                          + "|" + q.value(1).toString());
+            qint64 last_seen = q.value(2).toLongLong();
+            qint64 now = QDateTime::currentSecsSinceEpoch();
+
+            if (now - last_seen <= 15) {
+                send_response(socket, "FOUND:" + q.value(0).toString() + "|" + q.value(1).toString());
+            } else {
+                send_response(socket, "NOT_FOUND");
+            }
         } else {
             send_response(socket, "NOT_FOUND");
         }
@@ -186,6 +193,12 @@ void Bootstrap_Server::handle_data(QTcpSocket *socket, const QString &msg)
     }
     else if (msg.startsWith("FETCH:")) {
         QString nickname = msg.mid(6);
+
+        QSqlQuery upd(m_db);
+        upd.prepare("UPDATE peers SET last_seen = :ts WHERE nickname = :nick");
+        upd.bindValue(":ts", QDateTime::currentSecsSinceEpoch());
+        upd.bindValue(":nick", nickname);
+        upd.exec();
 
         QSqlQuery q(m_db);
         q.prepare("SELECT blob FROM messages WHERE nickname = :nick ORDER BY id ASC");
@@ -414,10 +427,12 @@ bool Bootstrap_Server::init_database()
 
     QSqlQuery q(m_db);
 
+    q.exec("DROP TABLE IF EXISTS peers");
     q.exec("CREATE TABLE IF NOT EXISTS peers ("
            "nickname TEXT PRIMARY KEY,"
            "address  TEXT NOT NULL,"
-           "pubkey   TEXT NOT NULL"
+           "pubkey   TEXT NOT NULL,"
+           "last_seen INTEGER NOT NULL"
            ")");
 
     q.exec("CREATE TABLE IF NOT EXISTS messages ("
