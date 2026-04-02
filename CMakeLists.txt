@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.19)
 
 project(Hogrin-Server LANGUAGES CXX)
 
-find_package(Qt6 6.4 REQUIRED COMPONENTS Core Network Sql)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Network Sql WebSockets)
 
 qt_standard_project_setup()
 
@@ -24,6 +24,7 @@ target_link_libraries(Hogrin-Server
         Qt6::Core
         Qt6::Network
         Qt6::Sql
+        Qt6::WebSockets
         ${SODIUM_LIBRARIES}
 )
 
