@@ -188,7 +188,7 @@ void Bootstrap_Server::core_process_message(const QString &ip, const QString &ms
             qint64 last_seen = q.value(2).toLongLong();
             qint64 now = QDateTime::currentSecsSinceEpoch();
 
-            if (now - last_seen <= 15) {
+            if (now - last_seen <= 3600) {
                 reply("FOUND:" + q.value(0).toString() + "|" + q.value(1).toString());
             } else {
                 reply("NOT_FOUND");
