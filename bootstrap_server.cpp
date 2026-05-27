@@ -188,7 +188,7 @@ void Bootstrap_Server::core_process_message(const QString &ip, const QString &ms
             qint64 last_seen = q.value(2).toLongLong();
             qint64 now = QDateTime::currentSecsSinceEpoch();
 
-            if (now - last_seen <= 3600) {
+            if (now - last_seen <= 10) {
                 reply("FOUND:" + q.value(0).toString() + "|" + q.value(1).toString());
             } else {
                 reply("NOT_FOUND");
@@ -196,6 +196,29 @@ void Bootstrap_Server::core_process_message(const QString &ip, const QString &ms
         } else {
             reply("NOT_FOUND");
         }
+    }
+    else if (msg.startsWith("SEARCH:")) {
+        QString query = msg.mid(7).trimmed();
+        if (query.length() < 2) {
+            reply("SEARCH_EMPTY");
+            return;
+        }
+
+        QSqlQuery q(m_pg);
+        q.prepare("SELECT nickname FROM users "
+                  "WHERE nickname ILIKE :q AND is_banned = FALSE "
+                  "ORDER BY nickname LIMIT 20");
+        q.bindValue(":q", "%" + query + "%");
+        q.exec();
+
+        QStringList results;
+        while (q.next())
+            results << q.value(0).toString();
+
+        if (results.isEmpty())
+            reply("SEARCH_EMPTY");
+        else
+            reply("SEARCH_RESULT:" + results.join(","));
     }
     else if (msg.startsWith("STORE:")) {
         if (m_ip_store_count[ip] >= Config::RELAY_MAX_STORE_PER_IP) {
